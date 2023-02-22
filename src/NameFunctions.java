@@ -11,6 +11,7 @@
 
 import com.google.gson.*;
 import ghidra.app.script.GhidraScript;
+import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.mem.MemoryAccessException;
@@ -53,22 +54,42 @@ public class NameFunctions extends GhidraScript{
         return response.body();
     }
 
+    boolean appendPlateComment(Address addr, String comment) {
+        String oldComment = getPlateComment(addr);
+
+        if (oldComment == null) {
+            return setPlateComment(addr, comment);
+        } else if (oldComment.contains(comment)) {
+            return true;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(oldComment);
+        sb.append("\n");
+        sb.append(comment);
+
+        return setPlateComment(addr, sb.toString());
+    }
 
     //Imports one label, if the function isn't already named.
     void importlabel(String adr, JsonObject obj){
         String name=obj.get("Name").getAsString();
+        String filename = obj.get("Filename").getAsString();
         Function f=getFunctionAt(toAddr(adr));
 
         //We're mostly trying to replace the DEFAULT entries.
-        println(adr+": "+name);
+        println(String.format("%s: %s (from %s)", adr, name, filename));
         if(f.getSignatureSource()==DEFAULT){
             try {
                 f.setName(name, IMPORTED);
+                appendPlateComment(f.getEntryPoint(), String.format("symgrate: name \"%s\" from \"%s\"", name, filename));
             } catch (DuplicateNameException e) {
                 println("Failed to import duplicate name: "+name+" at "+adr);
             } catch (InvalidInputException e) {
                 e.printStackTrace();
             }
+        } else {
+            println(String.format("%s is already named %s at %s", name, f.getName(), adr));
         }
     }
 
@@ -102,14 +123,19 @@ public class NameFunctions extends GhidraScript{
 
         for(int i=0; f!=null && !monitor.isCancelled(); i++){
             String adr=f.getEntryPoint().toString();
-            String data=byteString(f);
 
-            Function next=getFunctionAfter(f);
-            if(f.getBody().getMaxAddress().getOffset()-f.getBody().getMinAddress().getOffset()>18){
-                q.append(adr);
-                q.append("=");
-                q.append(data);
-                q.append("&");
+            try {
+                long funcSize = (f.getBody().getMaxAddress().getOffset() + 1) - f.getBody().getMinAddress().getOffset();
+                if(funcSize >= 18){
+                    String data=byteString(f);
+                    q.append(adr);
+                    q.append("=");
+                    q.append(data);
+                    q.append("&");
+                }
+            } catch (MemoryAccessException e) {
+                println(String.format("Could not load function bytes at %s", adr));
+                i -= 1;
             }
 
             f=getFunctionAfter(f);

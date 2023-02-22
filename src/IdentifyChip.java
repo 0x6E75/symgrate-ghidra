@@ -7,15 +7,6 @@
 //@author      Travis Goodspeed and EVM
 //@menupath    Tools.Symgrate.Identify Chip
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import ghidra.app.script.GhidraScript;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.listing.Instruction;
-import ghidra.program.model.pcode.PcodeOp;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -25,6 +16,19 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Set;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import ghidra.app.script.GhidraScript;
+import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressIterator;
+import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.ReferenceIterator;
+import ghidra.program.model.symbol.ReferenceManager;
 
 public class IdentifyChip extends GhidraScript {
     private static final HttpClient httpClient = HttpClient.newBuilder()
@@ -66,43 +70,41 @@ public class IdentifyChip extends GhidraScript {
 
     @Override
     protected void run() throws Exception {
-        //Just for deduplication.
-        HashMap<Long, String> hm= new HashMap<>();
-
         StringBuilder q=new StringBuilder();
-        //Instruction instruction = getInstructionAt(getAddressFactory().getAddress("1fff1318"));
-        Instruction instruction = getFirstInstruction();
-        while(!monitor.isCancelled() && instruction!=null){
-            String istr=instruction.toString();
 
-            PcodeOp[] pop= instruction.getPcode();
-            for (PcodeOp pcodeOp : pop) {
-                //println(pop[i].getMnemonic());
-                if (pcodeOp.getMnemonic().equals("COPY")) {
-                    //Mostly finds inputs.
-                    Address a = pcodeOp.getInput(0).getAddress();
-                    Address b = pcodeOp.getOutput().getAddress();
-                    if (a.isMemoryAddress()) {
-                        //println(instruction.getAddress().toString());
-                        long source = (currentProgram.getMemory().getInt(a));
-                        if ((source & 0x0F0000000) == 0x040000000 && !hm.containsKey(source)) {
-                            q.append(String.format("0x%x=r&", source));
-                            hm.put(source,"Whatever");  //So we don't add the same port twice.
-                        }
-                    }
-                    if (b.isMemoryAddress()) {
-                        //println(a.toString());
-                        long dest = (currentProgram.getMemory().getInt(b));
-                        if ((dest & 0x0F0000000) == 0x040000000 && !hm.containsKey(dest)) {
-                            q.append(String.format("0x%x=r&", dest));
-                            hm.put(dest,"Whatever");  //So we don't add the same port twice.
-                        }
-                    }
+        Address peripheralsStart = getAddressFactory().getDefaultAddressSpace().getAddress(0x40000000);
+        AddressSet peripheralAddrs = getAddressFactory().getAddressSet(peripheralsStart, peripheralsStart.add(0x10000000));
+
+        ReferenceManager refMan = currentProgram.getReferenceManager();
+
+        AddressIterator destIter = refMan.getReferenceDestinationIterator(peripheralAddrs, true);
+        while (destIter.hasNext()) {
+            Address destAddr = destIter.next();
+            boolean read = false;
+            boolean write = false;
+
+            ReferenceIterator refIter = refMan.getReferencesTo(destAddr);
+            while (refIter.hasNext()) {
+                Reference ref = refIter.next();
+
+                if (ref.getReferenceType().isData()) {
+                    read |= ref.getReferenceType().isRead();
+                    write |= ref.getReferenceType().isWrite();
                 }
             }
 
-            instruction = getInstructionAfter(instruction);
+            q.append(String.format("0x%x=", destAddr.getOffset()));
+            if (read || write) {
+                if (read)
+                    q.append("r");
+                if (write)
+                    q.append("w");
+            } else {
+                q.append("u");
+            }
+            q.append("&");
         }
+
         importresult(queryjregs(q.toString()));
     }
 }
