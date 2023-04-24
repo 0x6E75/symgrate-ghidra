@@ -2,7 +2,7 @@
  * Simple query for Symgrate.com.  If you use this, you owe EVM and Travis Goodspeed a tasty beer.
  * (No, a Jever doesn't count.)
  */
-//Queries symgrate.com to recover Thumb2 function names.
+//Queries symgrate.com to recover Thumb2 function names. RENAMES ALL FUNCTIONS IT FINDS.
 //@category    Symgrate
 //@author      Travis Goodspeed and EVM
 //@menupath    Tools.Symgrate.Name Functions
@@ -79,7 +79,7 @@ public class NameFunctions extends GhidraScript{
 
         //We're mostly trying to replace the DEFAULT entries.
         println(String.format("%s: %s (from %s)", adr, name, filename));
-        if(f.getSignatureSource()==DEFAULT){
+        //if(f.getSignatureSource()==DEFAULT){
             try {
                 f.setName(name, IMPORTED);
                 appendPlateComment(f.getEntryPoint(), String.format("symgrate: name \"%s\" from \"%s\"", name, filename));
@@ -88,9 +88,9 @@ public class NameFunctions extends GhidraScript{
             } catch (InvalidInputException e) {
                 e.printStackTrace();
             }
-        } else {
-            println(String.format("%s is already named %s at %s", name, f.getName(), adr));
-        }
+        //} else {
+        //    println(String.format("%s is already named %s at %s", name, f.getName(), adr));
+        //}
     }
 
     //Imports a JSON string from the API query.
